@@ -27,7 +27,7 @@ use support::{
     decl_event, decl_module, decl_storage,
     dispatch::Result,
     ensure,
-    storage::{StorageDoubleMap, StorageMap, StorageValue},
+    storage::{StorageDoubleMap, StorageMap},
 };
 use system::ensure_signed;
 
@@ -39,16 +39,14 @@ use sr_primitives::traits::{IdentifyAccount, Member, Verify};
 
 use codec::{Decode, Encode};
 
-#[cfg(feature = "std")]
-use serde::{Deserialize, Serialize};
-
 use encointer_currencies::CurrencyIdentifier;
 use encointer_balances::traits::MultiCurrency;
+use encointer_scheduler::{CeremonyIndexType, CeremonyPhaseType, OnCeremonyPhaseChange};
 
 pub trait Trait: system::Trait 
-    //+ balances::Trait 
     + encointer_currencies::Trait 
     + encointer_balances::Trait 
+    + encointer_scheduler::Trait
 {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
     type Public: IdentifyAccount<AccountId = Self::AccountId>;
@@ -57,24 +55,10 @@ pub trait Trait: system::Trait
 
 const REPUTATION_LIFETIME: u32 = 1;
 
-pub type CeremonyIndexType = u32;
 pub type ParticipantIndexType = u64;
 pub type MeetupIndexType = u64;
 pub type AttestationIndexType = u64;
 pub type CurrencyCeremony = (CurrencyIdentifier, CeremonyIndexType);
-
-#[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, Debug)]
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
-pub enum CeremonyPhaseType {
-    REGISTERING,
-    ASSIGNING,
-    ATTESTING,
-}
-impl Default for CeremonyPhaseType {
-    fn default() -> Self {
-        CeremonyPhaseType::REGISTERING
-    }
-}
 
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Reputation {
@@ -141,15 +125,7 @@ decl_storage! {
         AttestationCount get(attestation_count): map CurrencyCeremony => AttestationIndexType;
         // how many peers does each participants observe at their meetup
         MeetupParticipantCountVote get(meetup_participant_count_vote): double_map CurrencyCeremony, blake2_256(T::AccountId) => u32;
-
-        // caution: index starts with 1, not 0! (because null and 0 is the same for state storage)
-        CurrentCeremonyIndex get(current_ceremony_index) config(): CeremonyIndexType;
-
-        LastCeremonyBlock get(last_ceremony_block): T::BlockNumber;
-        CurrentPhase get(current_phase): CeremonyPhaseType = CeremonyPhaseType::REGISTERING;
-
         CeremonyReward get(ceremony_reward) config(): T::Balance;
-        CeremonyMaster get(ceremony_master) config(): T::AccountId;
     }
 }
 
@@ -157,55 +133,23 @@ decl_module! {
     pub struct Module<T: Trait> for enum Call where origin: T::Origin {
         fn deposit_event() = default;
 
-        pub fn next_phase(origin) -> Result {
-            let sender = ensure_signed(origin)?;
-            ensure!(sender == <CeremonyMaster<T>>::get(), "only the CeremonyMaster can call this function");
-            let current_phase = <CurrentPhase>::get();
-            let current_ceremony_index = <CurrentCeremonyIndex>::get();
-
-            let next_phase = match current_phase {
-                CeremonyPhaseType::REGISTERING => {
-                        Self::assign_meetups()?;
-                        CeremonyPhaseType::ASSIGNING
-                },
-                CeremonyPhaseType::ASSIGNING => {
-                        CeremonyPhaseType::ATTESTING
-                },
-                CeremonyPhaseType::ATTESTING => {
-                        Self::issue_rewards()?;
-                        let next_ceremony_index = match current_ceremony_index.checked_add(1) {
-                            Some(v) => v,
-                            None => 0, //deliberate wraparound
-                        };
-                        Self::purge_registry(current_ceremony_index)?;
-                        <CurrentCeremonyIndex>::put(next_ceremony_index);
-                        CeremonyPhaseType::REGISTERING
-                },
-            };
-
-            <CurrentPhase>::put(next_phase);
-            Self::deposit_event(RawEvent::PhaseChangedTo(next_phase));
-            print_utf8(b"phase changed");
-            Ok(())
-        }
-
         pub fn grant_reputation(origin, cid: CurrencyIdentifier, reputable: T::AccountId) -> Result {
             let sender = ensure_signed(origin)?;
-            ensure!(sender == <CeremonyMaster<T>>::get(), "only the CeremonyMaster can call this function");
-            let cindex = <CurrentCeremonyIndex>::get();
+            ensure!(sender == <encointer_scheduler::Module<T>>::ceremony_master(), "only the CeremonyMaster can call this function");
+            let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
             <ParticipantReputation<T>>::insert(&(cid, cindex-1), reputable, Reputation::VerifiedUnlinked);
             Ok(())
         }
 
         pub fn register_participant(origin, cid: CurrencyIdentifier, proof: Option<ProofOfAttendance<T::Signature, T::AccountId>>) -> Result {
             let sender = ensure_signed(origin)?;
-            ensure!(<CurrentPhase>::get() == CeremonyPhaseType::REGISTERING,
+            ensure!(<encointer_scheduler::Module<T>>::current_phase() == CeremonyPhaseType::REGISTERING,
                 "registering participants can only be done during REGISTERING phase");
 
             ensure!(<encointer_currencies::Module<T>>::currency_identifiers().contains(&cid),
                 "CurrencyIdentifier not found");
 
-            let cindex = <CurrentCeremonyIndex>::get();
+            let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
 
             if <ParticipantIndex<T>>::exists((cid, cindex), &sender) {
                 return Err("already registered participant")
@@ -242,9 +186,9 @@ decl_module! {
 
         pub fn register_attestations(origin, attestations: Vec<Attestation<T::Signature, T::AccountId>>) -> Result {
             let sender = ensure_signed(origin)?;
-            ensure!(<CurrentPhase>::get() == CeremonyPhaseType::ATTESTING,
+            ensure!(<encointer_scheduler::Module<T>>::current_phase() == CeremonyPhaseType::ATTESTING,
                 "registering attestations can only be done during ATTESTING phase");
-            let cindex = <CurrentCeremonyIndex>::get();
+            let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
             ensure!(attestations.len()>0, "empty attestations supplied");
             let cid = attestations[0].claim.currency_identifier;
             ensure!(<encointer_currencies::Module<T>>::currency_identifiers().contains(&cid),
@@ -309,7 +253,6 @@ decl_event!(
     where
         AccountId = <T as system::Trait>::AccountId,
     {
-        PhaseChangedTo(CeremonyPhaseType),
         ParticipantRegistered(AccountId),
     }
 );
@@ -355,7 +298,7 @@ impl<T: Trait> Module<T> {
     fn assign_meetups() -> Result {
         let cids = <encointer_currencies::Module<T>>::currency_identifiers();
         for cid in cids.iter() {
-            let cindex = <CurrentCeremonyIndex>::get();
+            let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
             let pcount = <ParticipantCount>::get((cid, cindex));
 
             let mut reputables = Vec::with_capacity(pcount as usize);
@@ -460,16 +403,16 @@ impl<T: Trait> Module<T> {
         let cids = <encointer_currencies::Module<T>>::currency_identifiers();
         for cid in cids.iter() {
             ensure!(
-                Self::current_phase() == CeremonyPhaseType::ATTESTING,
+                <encointer_scheduler::Module<T>>::current_phase() == CeremonyPhaseType::REGISTERING,
                 "issuance can only be called at the end of ATTESTING phase"
             );
-            let cindex = Self::current_ceremony_index();
+            let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index() -1;
             let meetup_count = Self::meetup_count((cid, cindex));
             let reward = Self::ceremony_reward();
 
             for m in 1..=meetup_count {
                 // first, evaluate votes on how many participants showed up
-                let (n_confirmed, n_honest_participants) = match Self::ballot_meetup_n_votes(cid, m)
+                let (n_confirmed, n_honest_participants) = match Self::ballot_meetup_n_votes(cid, cindex, m)
                 {
                     Some(nn) => nn,
                     _ => {
@@ -527,9 +470,9 @@ impl<T: Trait> Module<T> {
 
     fn ballot_meetup_n_votes(
         cid: &CurrencyIdentifier,
+        cindex: CeremonyIndexType,
         meetup_idx: MeetupIndexType,
     ) -> Option<(u32, u32)> {
-        let cindex = Self::current_ceremony_index();
         let meetup_participants = Self::meetup_registry((cid, cindex), &meetup_idx);
         // first element is n, second the count of votes for n
         let mut n_vote_candidates: Vec<(u32, u32)> = vec![];
@@ -558,6 +501,23 @@ impl<T: Trait> Module<T> {
     // only to be used by tests
     fn fake_reputation(cidcindex: CurrencyCeremony, account: &T::AccountId, rep: Reputation) {
         <ParticipantReputation<T>>::insert(&cidcindex, account, rep);
+    }
+}
+
+impl<T: Trait> OnCeremonyPhaseChange for Module<T> {
+    fn on_ceremony_phase_change(new_phase: CeremonyPhaseType) 
+    { 
+        match new_phase {
+            CeremonyPhaseType::ASSIGNING => {
+                Self::assign_meetups();
+            }
+            CeremonyPhaseType::ATTESTING => { }
+            CeremonyPhaseType::REGISTERING => { 
+                Self::issue_rewards();
+                let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
+                Self::purge_registry(cindex-1);
+            }
+        }
     }
 }
 

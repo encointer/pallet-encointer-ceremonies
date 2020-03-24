@@ -74,6 +74,12 @@ git = "https://github.com/paritytech/substrate"
 package = "substrate-primitives"
 rev = "3bf9540e72df5ecb3955845764dfee7dcdbb26b5"
 
+[dev-dependencies.timestamp]
+default-features = false
+git = "https://github.com/paritytech/substrate"
+package = "pallet-timestamp"
+rev = "3bf9540e72df5ecb3955845764dfee7dcdbb26b5"
+
 [dev-dependencies.node-primitives]
 git = "https://github.com/paritytech/substrate"
 package = "node-primitives"

@@ -106,12 +106,24 @@ impl encointer_balances::Trait for TestRuntime {
 
 pub type EncointerBalances = encointer_balances::Module<TestRuntime>;
 
+parameter_types! {
+	pub const MomentsPerDay: u64 = 86_400_000; // [ms/d]
+}
 impl encointer_scheduler::Trait for TestRuntime {
     type Event = ();
     type OnCeremonyPhaseChange = Module<TestRuntime>; //OnCeremonyPhaseChange;
+    type MomentsPerDay = MomentsPerDay;
 }
 pub type EncointerScheduler = encointer_scheduler::Module<TestRuntime>;
 
+parameter_types! {
+    pub const MinimumPeriod: u64 = 1;
+}
+impl timestamp::Trait for TestRuntime {
+	type Moment = u64;
+	type OnTimestampSet = EncointerScheduler;
+	type MinimumPeriod = MinimumPeriod;
+}
 /*
 pub struct TestOnCeremonyPhaseChange;
 impl OnCeremonyPhaseChange for TestOnCeremonyPhaseChange {
@@ -139,6 +151,11 @@ impl ExtBuilder {
         encointer_scheduler::GenesisConfig::<TestRuntime> {
             current_ceremony_index: 1,
             ceremony_master: AccountId::from(AccountKeyring::Alice),
+            phase_durations: vec![
+                (CeremonyPhaseType::REGISTERING, 86_400_000),
+                (CeremonyPhaseType::ASSIGNING, 86_400_000),
+                (CeremonyPhaseType::ATTESTING, 86_400_000),
+            ]
         }
         .assimilate_storage(&mut storage)
         .unwrap();

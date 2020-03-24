@@ -39,7 +39,7 @@ use sr_primitives::traits::{IdentifyAccount, Member, Verify};
 
 use codec::{Decode, Encode};
 
-use encointer_currencies::CurrencyIdentifier;
+use encointer_currencies::{CurrencyIdentifier, Location};
 use encointer_balances::traits::MultiCurrency;
 use encointer_scheduler::{CeremonyIndexType, CeremonyPhaseType, OnCeremonyPhaseChange};
 
@@ -90,6 +90,7 @@ pub struct ClaimOfAttendance<AccountId> {
     pub ceremony_index: CeremonyIndexType,
     pub currency_identifier: CurrencyIdentifier,
     pub meetup_index: MeetupIndexType,
+    pub location: Location,
     pub number_of_participants_confirmed: u32,
 }
 
@@ -126,6 +127,8 @@ decl_storage! {
         // how many peers does each participants observe at their meetup
         MeetupParticipantCountVote get(meetup_participant_count_vote): double_map CurrencyCeremony, blake2_256(T::AccountId) => u32;
         CeremonyReward get(ceremony_reward) config(): T::Balance;
+        // [m] distance from assigned meetup location
+        LocationTolerance get(location_tolerance) config(): u32; 
     }
 }
 
@@ -203,6 +206,10 @@ decl_module! {
             ensure!(num_signed <= num_registered, "can\'t have more attestations than other meetup participants");
             let mut verified_attestation_accounts = vec!();
             let mut claim_n_participants = 0u32;
+
+            // FIXME: this could panic due to index out of bounds!
+            let mlocation = <encointer_currencies::Module<T>>::locations(&cid)[(meetup_index-1) as usize];
+
             for w in 0..num_signed {
                 let attestation = &attestations[w];
                 let attestation_account = &attestations[w].public;
@@ -218,6 +225,16 @@ decl_module! {
                 if attestation.claim.meetup_index != meetup_index {
                     print_utf8(b"ignoring claim with wrong meetup index");
                     continue };
+                if !<encointer_currencies::Module<T>>::is_valid_geolocation(
+                    &attestation.claim.location) {
+                        return Err("illegal geolocation");
+                        print_utf8(b"ignoring claim with illegal geolocation");
+                        continue };   
+                if <encointer_currencies::Module<T>>::haversine_distance(
+                    &mlocation, &attestation.claim.location) > Self::location_tolerance() {
+                        return Err("too far away");
+                        print_utf8(b"ignoring claim beyond location tolerance");
+                        continue };     
                 if Self::verify_attestation_signature(attestation.clone()).is_err() {
                     print_utf8(b"ignoring attestation with bad signature");
                     continue };
@@ -436,17 +453,17 @@ impl<T: Trait> Module<T> {
                         print_utf8(b"skipped participant because of too few attestations");
                         continue;
                     }
-                    let mut has_attestationed = 0u32;
+                    let mut has_attested = 0u32;
                     for w in attestations {
                         let w_attestations = Self::attestation_registry(
                             (cid, cindex),
                             &Self::attestation_index((cid, cindex), &w),
                         );
                         if w_attestations.contains(&p) {
-                            has_attestationed += 1;
+                            has_attested += 1;
                         }
                     }
-                    if has_attestationed < (n_honest_participants - 1) {
+                    if has_attested < (n_honest_participants - 1) {
                         print_utf8(b"skipped participant because didn't testify for honest peers");
                         continue;
                     }

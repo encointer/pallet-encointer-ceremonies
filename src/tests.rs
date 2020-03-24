@@ -124,15 +124,6 @@ impl timestamp::Trait for TestRuntime {
 	type OnTimestampSet = EncointerScheduler;
 	type MinimumPeriod = MinimumPeriod;
 }
-/*
-pub struct TestOnCeremonyPhaseChange;
-impl OnCeremonyPhaseChange for TestOnCeremonyPhaseChange {
-    fn on_ceremony_phase_change(new_phase: CeremonyPhaseType) 
-    { 
-        println!("chello");
-    }
-}
-*/
 
 type AccountPublic = <Signature as Verify>::Signer;
 
@@ -161,6 +152,7 @@ impl ExtBuilder {
         .unwrap();
         GenesisConfig::<TestRuntime> {
             ceremony_reward: REWARD,
+            location_tolerance: 100, // [m]
         }
         .assimilate_storage(&mut storage)
         .unwrap();
@@ -178,6 +170,7 @@ fn meetup_claim_sign(
     cid: CurrencyIdentifier,
     cindex: CeremonyIndexType,
     mindex: MeetupIndexType,
+    location: Location,
     n_participants: u32,
 ) -> TestAttestation {
     let claim = ClaimOfAttendance {
@@ -185,6 +178,7 @@ fn meetup_claim_sign(
         currency_identifier: cid,
         ceremony_index: cindex,
         meetup_index: mindex,
+        location,
         number_of_participants_confirmed: n_participants,
     };
     TestAttestation {
@@ -252,6 +246,7 @@ fn gets_attested_by(
     cid: CurrencyIdentifier,
     cindex: CeremonyIndexType,
     mindex: MeetupIndexType,
+    location: Location,
     n_participants: u32,
 ) {
     let mut attestations: Vec<TestAttestation> = vec![];
@@ -264,6 +259,7 @@ fn gets_attested_by(
                 cid,
                 cindex,
                 mindex,
+                location,
                 n_participants,
             ),
         );
@@ -286,17 +282,16 @@ fn register_test_currency() -> CurrencyIdentifier {
     let dave = AccountId::from(AccountKeyring::Dave);
     let eve = AccountId::from(AccountKeyring::Eve);
     let ferdie = AccountId::from(AccountKeyring::Ferdie);
-    let a = Location {
+    
+    let a = Location::default(); // 0, 0
+    
+    let b = Location {
         lat: Degree::from_num(1),
         lon: Degree::from_num(1),
     };
-    let b = Location {
-        lat: Degree::from_num(1),
-        lon: Degree::from_num(2),
-    };
     let c = Location {
-        lat: Degree::from_num(1),
-        lon: Degree::from_num(3),
+        lat: Degree::from_num(2),
+        lon: Degree::from_num(2),
     };
     let loc = vec![a, b, c];
     let bs = vec![
@@ -522,6 +517,7 @@ fn verify_attestation_signatue_works() {
             currency_identifier: cid,
             ceremony_index: 1,
             meetup_index: 1,
+            location: Location::default(),
             number_of_participants_confirmed: 3,
         };
         let attestation_good = TestAttestation {
@@ -572,6 +568,7 @@ fn register_attestations_works() {
             EncointerCeremonies::meetup_index((cid, cindex), &get_accountid(&alice)),
             1
         );
+        let loc = Location::default();
 
         gets_attested_by(
             get_accountid(&alice),
@@ -579,6 +576,7 @@ fn register_attestations_works() {
             cid,
             1,
             1,
+            loc,
             3,
         );
         gets_attested_by(
@@ -587,6 +585,7 @@ fn register_attestations_works() {
             cid,
             1,
             1,
+            loc,
             3,
         );
 
@@ -607,6 +606,7 @@ fn register_attestations_works() {
             cid,
             1,
             1,
+            loc,
             3,
         );
         assert_eq!(EncointerCeremonies::attestation_count((cid, cindex)), 2);
@@ -629,12 +629,14 @@ fn register_attestations_for_non_participant_fails_silently() {
             master.clone()
         )));
         // ATTESTING
+        
         gets_attested_by(
             get_accountid(&alice),
             vec![bob.clone(), alice.clone()],
             cid,
             1,
             1,
+            Location::default(),
             3,
         );
         assert_eq!(EncointerCeremonies::attestation_count((cid, cindex)), 1);
@@ -662,13 +664,14 @@ fn register_attestations_for_non_participant_fails() {
         )));
         // ATTESTING
         let mut eve_attestations: Vec<TestAttestation> = vec![];
+        let loc = Location::default();
         eve_attestations.insert(
             0,
-            meetup_claim_sign(get_accountid(&eve), alice.clone(), cid, 1, 1, 3),
+            meetup_claim_sign(get_accountid(&eve), alice.clone(), cid, 1, 1, loc, 3),
         );
         eve_attestations.insert(
             1,
-            meetup_claim_sign(get_accountid(&eve), ferdie.clone(), cid, 1, 1, 3),
+            meetup_claim_sign(get_accountid(&eve), ferdie.clone(), cid, 1, 1, loc, 3),
         );
         assert!(EncointerCeremonies::register_attestations(
             Origin::signed(get_accountid(&eve)),
@@ -701,6 +704,7 @@ fn register_attestations_with_non_participant_fails_silently() {
             cid,
             1,
             1,
+            Location::default(),
             3,
         );
         assert_eq!(EncointerCeremonies::attestation_count((cid, cindex)), 1);
@@ -727,16 +731,18 @@ fn register_attestations_with_wrong_meetup_index_fails() {
             master.clone()
         )));
         // ATTESTING
+        let loc = Location::default();
         let mut alice_attestations: Vec<TestAttestation> = vec![];
         alice_attestations.insert(
             0,
-            meetup_claim_sign(get_accountid(&alice), bob.clone(), cid, 1, 1, 3),
+            meetup_claim_sign(get_accountid(&alice), bob.clone(), cid, 1, 1, loc, 3),
         );
         let claim = ClaimOfAttendance {
             claimant_public: get_accountid(&alice),
             currency_identifier: cid,
             ceremony_index: 1,
             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            location: Location::default(),
             meetup_index: 1 + 99,
             number_of_participants_confirmed: 3,
         };
@@ -775,10 +781,11 @@ fn register_attestations_with_wrong_ceremony_index_fails() {
             master.clone()
         )));
         // ATTESTING
+        let loc = Location::default();
         let mut alice_attestations: Vec<TestAttestation> = vec![];
         alice_attestations.insert(
             0,
-            meetup_claim_sign(get_accountid(&alice), bob.clone(), cid, 1, 1, 3),
+            meetup_claim_sign(get_accountid(&alice), bob.clone(), cid, 1, 1, loc, 3),
         );
         let claim = ClaimOfAttendance {
             claimant_public: get_accountid(&alice),
@@ -786,6 +793,7 @@ fn register_attestations_with_wrong_ceremony_index_fails() {
             // !!!!!!!!!!!!!!!!!!!!!!!!!!
             ceremony_index: 99,
             meetup_index: 1,
+            location: Location::default(),
             number_of_participants_confirmed: 3,
         };
         alice_attestations.insert(
@@ -829,28 +837,29 @@ fn ballot_meetup_n_votes_works() {
             master.clone()
         )));
         // ATTESTING
-        gets_attested_by(get_accountid(&alice), vec![bob.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&bob), vec![alice.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&charlie), vec![alice.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&dave), vec![alice.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&eve), vec![alice.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&ferdie), vec![dave.clone()], cid, 1, 1, 6);
+        let loc = Location::default();
+        gets_attested_by(get_accountid(&alice), vec![bob.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&bob), vec![alice.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&charlie), vec![alice.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&dave), vec![alice.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&eve), vec![alice.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&ferdie), vec![dave.clone()], cid, 1, 1, loc, 6);
         assert!(EncointerCeremonies::ballot_meetup_n_votes(&cid, 1, 1) == Some((5, 5)));
 
-        gets_attested_by(get_accountid(&alice), vec![bob.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&bob), vec![alice.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&charlie), vec![alice.clone()], cid, 1, 1, 4);
-        gets_attested_by(get_accountid(&dave), vec![alice.clone()], cid, 1, 1, 4);
-        gets_attested_by(get_accountid(&eve), vec![alice.clone()], cid, 1, 1, 6);
-        gets_attested_by(get_accountid(&ferdie), vec![dave.clone()], cid, 1, 1, 6);
+        gets_attested_by(get_accountid(&alice), vec![bob.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&bob), vec![alice.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&charlie), vec![alice.clone()], cid, 1, 1, loc, 4);
+        gets_attested_by(get_accountid(&dave), vec![alice.clone()], cid, 1, 1, loc, 4);
+        gets_attested_by(get_accountid(&eve), vec![alice.clone()], cid, 1, 1, loc, 6);
+        gets_attested_by(get_accountid(&ferdie), vec![dave.clone()], cid, 1, 1, loc, 6);
         assert!(EncointerCeremonies::ballot_meetup_n_votes(&cid, 1, 1) == None);
 
-        gets_attested_by(get_accountid(&alice), vec![bob.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&bob), vec![alice.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&charlie), vec![alice.clone()], cid, 1, 1, 5);
-        gets_attested_by(get_accountid(&dave), vec![alice.clone()], cid, 1, 1, 4);
-        gets_attested_by(get_accountid(&eve), vec![alice.clone()], cid, 1, 1, 6);
-        gets_attested_by(get_accountid(&ferdie), vec![dave.clone()], cid, 1, 1, 6);
+        gets_attested_by(get_accountid(&alice), vec![bob.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&bob), vec![alice.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&charlie), vec![alice.clone()], cid, 1, 1, loc, 5);
+        gets_attested_by(get_accountid(&dave), vec![alice.clone()], cid, 1, 1, loc, 4);
+        gets_attested_by(get_accountid(&eve), vec![alice.clone()], cid, 1, 1, loc, 6);
+        gets_attested_by(get_accountid(&ferdie), vec![dave.clone()], cid, 1, 1, loc, 6);
         assert!(EncointerCeremonies::ballot_meetup_n_votes(&cid, 1, 1) == Some((5, 3)));
     });
 }
@@ -882,12 +891,14 @@ fn issue_reward_works() {
         // eve signs no one else
         // charlie collects incomplete signatures
         // dave signs ferdi and reports wrong number of participants
+        let loc = Location::default();
         gets_attested_by(
             get_accountid(&alice),
             vec![bob.clone(), charlie.clone(), dave.clone()],
             cid,
             1,
             1,
+            loc,
             5,
         );
         gets_attested_by(
@@ -896,6 +907,7 @@ fn issue_reward_works() {
             cid,
             1,
             1,
+            loc,
             5,
         );
         gets_attested_by(
@@ -904,6 +916,7 @@ fn issue_reward_works() {
             cid,
             1,
             1,
+            loc,
             5,
         );
         gets_attested_by(
@@ -912,6 +925,7 @@ fn issue_reward_works() {
             cid,
             1,
             1,
+            loc,
             6,
         );
         gets_attested_by(
@@ -920,9 +934,13 @@ fn issue_reward_works() {
             cid,
             1,
             1,
+            loc,
             5,
         );
-        gets_attested_by(get_accountid(&ferdie), vec![dave.clone()], cid, 1, 1, 6);
+        gets_attested_by(
+            get_accountid(&ferdie), 
+            vec![dave.clone()], cid, 1, 1, loc, 6);
+
         assert_eq!(EncointerBalances::balance(&cid, &get_accountid(&alice)), 0);
 
         assert_ok!(EncointerScheduler::next_phase(Origin::signed(
@@ -981,7 +999,7 @@ fn perform_bootstrapping_ceremony() -> CurrencyIdentifier {
         master.clone()
     )));
     // ATTESTING
-
+    let loc = Location::default();
     gets_attested_by(
         get_accountid(&alice),
         vec![
@@ -994,6 +1012,7 @@ fn perform_bootstrapping_ceremony() -> CurrencyIdentifier {
         cid,
         1,
         1,
+        loc,
         6,
     );
     gets_attested_by(
@@ -1008,6 +1027,7 @@ fn perform_bootstrapping_ceremony() -> CurrencyIdentifier {
         cid,
         1,
         1,
+        loc,
         6,
     );
     gets_attested_by(
@@ -1022,6 +1042,7 @@ fn perform_bootstrapping_ceremony() -> CurrencyIdentifier {
         cid,
         1,
         1,
+        loc,
         6,
     );
     gets_attested_by(
@@ -1036,6 +1057,7 @@ fn perform_bootstrapping_ceremony() -> CurrencyIdentifier {
         cid,
         1,
         1,
+        loc,
         6,
     );
     gets_attested_by(
@@ -1050,6 +1072,7 @@ fn perform_bootstrapping_ceremony() -> CurrencyIdentifier {
         cid,
         1,
         1,
+        loc,
         6,
     );
     gets_attested_by(
@@ -1064,6 +1087,7 @@ fn perform_bootstrapping_ceremony() -> CurrencyIdentifier {
         cid,
         1,
         1,
+        loc,
         6,
     );
 
@@ -1094,12 +1118,14 @@ fn fully_attest_meetup(cid: CurrencyIdentifier, keys: Vec<sr25519::Pair>, mindex
             }
         }
         println!("  length of attestors: {}", others.len());
+        let loc = EncointerCurrencies::locations(&cid)[(mindex - 1) as usize];
         gets_attested_by(
             (*p).clone(),
             others,
             cid,
             cindex,
             mindex,
+            loc,
             meetup.len() as u32,
         );
     }

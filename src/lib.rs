@@ -28,10 +28,11 @@ use support::{
     dispatch::Result,
     ensure,
     storage::{StorageDoubleMap, StorageMap},
+    traits::Get,
 };
 use system::ensure_signed;
 
-use rstd::cmp::min;
+use rstd::{cmp::min, convert::{TryFrom, TryInto}};
 use rstd::prelude::*;
 
 use runtime_io::misc::print_utf8;
@@ -39,11 +40,12 @@ use sr_primitives::traits::{IdentifyAccount, Member, Verify};
 
 use codec::{Decode, Encode};
 
-use encointer_currencies::{CurrencyIdentifier, Location};
+use encointer_currencies::{CurrencyIdentifier, Location, Degree, LossyInto};
 use encointer_balances::traits::MultiCurrency;
 use encointer_scheduler::{CeremonyIndexType, CeremonyPhaseType, OnCeremonyPhaseChange};
 
 pub trait Trait: system::Trait 
+    + timestamp::Trait
     + encointer_currencies::Trait 
     + encointer_balances::Trait 
     + encointer_scheduler::Trait
@@ -78,19 +80,20 @@ impl Default for Reputation {
 }
 
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, Default, Debug)]
-pub struct Attestation<Signature, AccountId> {
-    pub claim: ClaimOfAttendance<AccountId>,
+pub struct Attestation<Signature, AccountId, Moment> {
+    pub claim: ClaimOfAttendance<AccountId, Moment>,
     pub signature: Signature,
     pub public: AccountId,
 }
 
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, Default, Debug)]
-pub struct ClaimOfAttendance<AccountId> {
+pub struct ClaimOfAttendance<AccountId, Moment> {
     pub claimant_public: AccountId,
     pub ceremony_index: CeremonyIndexType,
     pub currency_identifier: CurrencyIdentifier,
     pub meetup_index: MeetupIndexType,
     pub location: Location,
+    pub timestamp: Moment,
     pub number_of_participants_confirmed: u32,
 }
 
@@ -187,7 +190,7 @@ decl_module! {
             Ok(())
         }
 
-        pub fn register_attestations(origin, attestations: Vec<Attestation<T::Signature, T::AccountId>>) -> Result {
+        pub fn register_attestations(origin, attestations: Vec<Attestation<T::Signature, T::AccountId, T::Moment>>) -> Result {
             let sender = ensure_signed(origin)?;
             ensure!(<encointer_scheduler::Module<T>>::current_phase() == CeremonyPhaseType::ATTESTING,
                 "registering attestations can only be done during ATTESTING phase");
@@ -208,7 +211,8 @@ decl_module! {
             let mut claim_n_participants = 0u32;
 
             // FIXME: this could panic due to index out of bounds!
-            let mlocation = <encointer_currencies::Module<T>>::locations(&cid)[(meetup_index-1) as usize];
+            let mlocation = if let Some(l) = Self::get_meetup_location(&cid, meetup_index)
+                { l } else { return Err("meetup location not found") };
 
             for w in 0..num_signed {
                 let attestation = &attestations[w];
@@ -227,12 +231,10 @@ decl_module! {
                     continue };
                 if !<encointer_currencies::Module<T>>::is_valid_geolocation(
                     &attestation.claim.location) {
-                        return Err("illegal geolocation");
                         print_utf8(b"ignoring claim with illegal geolocation");
                         continue };   
                 if <encointer_currencies::Module<T>>::haversine_distance(
                     &mlocation, &attestation.claim.location) > Self::location_tolerance() {
-                        return Err("too far away");
                         print_utf8(b"ignoring claim beyond location tolerance");
                         continue };     
                 if Self::verify_attestation_signature(attestation.clone()).is_err() {
@@ -387,7 +389,7 @@ impl<T: Trait> Module<T> {
     }
 
     fn verify_attestation_signature(
-        attestation: Attestation<T::Signature, T::AccountId>,
+        attestation: Attestation<T::Signature, T::AccountId, T::Moment>,
     ) -> Result {
         ensure!(
             attestation.public != attestation.claim.claimant_public,
@@ -512,6 +514,41 @@ impl<T: Trait> Module<T> {
             return None;
         }
         Some(n_vote_candidates[0])
+    }
+
+    pub fn get_meetup_location(
+        cid: &CurrencyIdentifier,
+        meetup_idx: MeetupIndexType,        
+    ) -> Option<Location> {
+        let locations = <encointer_currencies::Module<T>>::locations(&cid);
+        if meetup_idx < locations.len() as MeetupIndexType {
+            Some(locations[(meetup_idx - 1) as usize])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_meetup_time(
+        cid: &CurrencyIdentifier,
+        meetup_idx: MeetupIndexType,
+    ) -> Option<T::Moment> {
+        if !(<encointer_scheduler::Module<T>>::current_phase() == CeremonyPhaseType::ATTESTING) {
+            return None;
+        }
+        let duration = <encointer_scheduler::Module<T>>::phase_durations(CeremonyPhaseType::ATTESTING);
+        let next = <encointer_scheduler::Module<T>>::next_phase_timestamp();
+        let mlocation = Self::get_meetup_location(&cid, meetup_idx)?;
+        let day = T::MomentsPerDay::get(); 
+        let perdegree = day / T::Moment::from(360);
+        let start = next - duration;
+        let abs_lon: i64 = mlocation.lon.abs().lossy_into();
+        let abs_lon_time = T::Moment::from(abs_lon.try_into().unwrap()) * perdegree;
+
+        if mlocation.lon < Degree::from_num(0) {
+            Some(start + day - abs_lon_time)
+        } else {
+            Some(start + day + abs_lon_time)
+        }
     }
 
     #[cfg(test)]

@@ -116,11 +116,12 @@ impl encointer_scheduler::Trait for TestRuntime {
 }
 pub type EncointerScheduler = encointer_scheduler::Module<TestRuntime>;
 
+type Moment = u64;
 parameter_types! {
-    pub const MinimumPeriod: u64 = 1;
+    pub const MinimumPeriod: Moment = 1;
 }
 impl timestamp::Trait for TestRuntime {
-	type Moment = u64;
+	type Moment = Moment;
 	type OnTimestampSet = EncointerScheduler;
 	type MinimumPeriod = MinimumPeriod;
 }
@@ -171,6 +172,7 @@ fn meetup_claim_sign(
     cindex: CeremonyIndexType,
     mindex: MeetupIndexType,
     location: Location,
+    timestamp: Moment,
     n_participants: u32,
 ) -> TestAttestation {
     let claim = ClaimOfAttendance {
@@ -179,6 +181,7 @@ fn meetup_claim_sign(
         ceremony_index: cindex,
         meetup_index: mindex,
         location,
+        timestamp,
         number_of_participants_confirmed: n_participants,
     };
     TestAttestation {

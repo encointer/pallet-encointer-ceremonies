@@ -36,7 +36,7 @@ use rstd::{cmp::min, convert::{TryFrom, TryInto}};
 use rstd::prelude::*;
 
 use runtime_io::misc::print_utf8;
-use sr_primitives::traits::{IdentifyAccount, Member, Verify};
+use sr_primitives::traits::{IdentifyAccount, Member, Verify, OnFinalize, OnInitialize};
 
 use codec::{Decode, Encode};
 
@@ -521,7 +521,7 @@ impl<T: Trait> Module<T> {
         meetup_idx: MeetupIndexType,        
     ) -> Option<Location> {
         let locations = <encointer_currencies::Module<T>>::locations(&cid);
-        if meetup_idx < locations.len() as MeetupIndexType {
+        if meetup_idx <= locations.len() as MeetupIndexType {
             Some(locations[(meetup_idx - 1) as usize])
         } else {
             None
@@ -545,9 +545,9 @@ impl<T: Trait> Module<T> {
         let abs_lon_time = T::Moment::from(abs_lon.try_into().unwrap()) * perdegree;
 
         if mlocation.lon < Degree::from_num(0) {
-            Some(start + day - abs_lon_time)
-        } else {
             Some(start + day + abs_lon_time)
+        } else {
+            Some(start + day - abs_lon_time)
         }
     }
 

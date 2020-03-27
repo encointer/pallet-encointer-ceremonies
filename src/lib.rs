@@ -36,7 +36,7 @@ use rstd::{cmp::min, convert::{TryFrom, TryInto}};
 use rstd::prelude::*;
 
 use runtime_io::misc::print_utf8;
-use sr_primitives::traits::{IdentifyAccount, Member, Verify, OnFinalize, OnInitialize};
+use sr_primitives::traits::{IdentifyAccount, Member, Verify, OnFinalize, OnInitialize, CheckedSub};
 
 use codec::{Decode, Encode};
 
@@ -132,6 +132,8 @@ decl_storage! {
         CeremonyReward get(ceremony_reward) config(): T::Balance;
         // [m] distance from assigned meetup location
         LocationTolerance get(location_tolerance) config(): u32; 
+        // [ms] time tolerance for meetup moment
+        TimeTolerance get(time_tolerance) config(): T::Moment;
     }
 }
 
@@ -210,10 +212,10 @@ decl_module! {
             let mut verified_attestation_accounts = vec!();
             let mut claim_n_participants = 0u32;
 
-            // FIXME: this could panic due to index out of bounds!
             let mlocation = if let Some(l) = Self::get_meetup_location(&cid, meetup_index)
                 { l } else { return Err("meetup location not found") };
-
+            let mtime = if let Some(t) = Self::get_meetup_time(&cid, meetup_index)
+                { t } else { return Err("meetup time could not be calculated") };
             for w in 0..num_signed {
                 let attestation = &attestations[w];
                 let attestation_account = &attestations[w].public;
@@ -236,7 +238,16 @@ decl_module! {
                 if <encointer_currencies::Module<T>>::haversine_distance(
                     &mlocation, &attestation.claim.location) > Self::location_tolerance() {
                         print_utf8(b"ignoring claim beyond location tolerance");
-                        continue };     
+                        continue };   
+                if let Some(dt) = mtime.checked_sub(&attestation.claim.timestamp) {
+                    if dt > Self::time_tolerance() {
+                        print_utf8(b"ignoring claim beyond time tolerance (too early)");
+                        continue }; 
+                } else if let Some(dt) = attestation.claim.timestamp.checked_sub(&mtime) {
+                    if dt > Self::time_tolerance() {
+                        print_utf8(b"ignoring claim beyond time tolerance (too late)");
+                        continue }; 
+                }
                 if Self::verify_attestation_signature(attestation.clone()).is_err() {
                     print_utf8(b"ignoring attestation with bad signature");
                     continue };

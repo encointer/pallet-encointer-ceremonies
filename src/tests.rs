@@ -38,12 +38,12 @@ use support::{assert_ok, impl_outer_event, impl_outer_origin, parameter_types};
 use test_client::AccountKeyring;
 
 const NONE: u64 = 0;
-const REWARD: Balance = 1000;
 const GENESIS_TIME: u64 = 1_585_058_843_000;
 const ONE_DAY: u64 = 86_400_000;
 const BLOCKTIME: u64 = 3_600_000; //1h per block
 const TIME_TOLERANCE: u64 = 1000; // [ms]
 const LOCATION_TOLERANCE: u32 = 100; // [m]
+const ZERO: BalanceType = BalanceType::from_bits(0x0);
 
 thread_local! {
     static EXISTENTIAL_DEPOSIT: RefCell<u64> = RefCell::new(0);
@@ -106,8 +106,6 @@ pub type System = system::Module<TestRuntime>;
 
 impl encointer_balances::Trait for TestRuntime {
 	type Event = ();
-	type Balance = Balance;
-	type Amount = i64;    
 }
 
 pub type EncointerBalances = encointer_balances::Module<TestRuntime>;
@@ -159,7 +157,7 @@ impl ExtBuilder {
         .assimilate_storage(&mut storage)
         .unwrap();
         GenesisConfig::<TestRuntime> {
-            ceremony_reward: REWARD,
+            ceremony_reward: BalanceType::from_num(1),
             location_tolerance: LOCATION_TOLERANCE, // [m]
             time_tolerance: TIME_TOLERANCE, // [ms]
         }
@@ -1130,16 +1128,26 @@ fn issue_reward_works() {
             get_accountid(&ferdie), 
             vec![dave.clone()], cid, 1, 1, loc, time, 6);
 
-        assert_eq!(EncointerBalances::balance(&cid, &get_accountid(&alice)), 0);
+        assert_eq!(EncointerBalances::balance(cid, &get_accountid(&alice)), ZERO);
 
         run_to_next_phase();
         // REGISTERING
 
-        assert_eq!(EncointerBalances::balance(&cid, &get_accountid(&alice)), REWARD);
-        assert_eq!(EncointerBalances::balance(&cid, &get_accountid(&bob)), REWARD);
-        assert_eq!(EncointerBalances::balance(&cid, &get_accountid(&charlie)), 0);
-        assert_eq!(EncointerBalances::balance(&cid, &get_accountid(&eve)), 0);
-        assert_eq!(EncointerBalances::balance(&cid, &get_accountid(&ferdie)), 0);
+        let result: f64 = EncointerBalances::balance(cid, &get_accountid(&alice)).lossy_into();
+        assert_abs_diff_eq!(
+            result,
+            EncointerCeremonies::ceremony_reward().lossy_into(),
+            epsilon = 1.0e-6);
+
+        let result: f64 = EncointerBalances::balance(cid, &get_accountid(&bob)).lossy_into();
+        assert_abs_diff_eq!(
+            result,
+            EncointerCeremonies::ceremony_reward().lossy_into(),
+            epsilon = 1.0e-6);
+
+        assert_eq!(EncointerBalances::balance(cid, &get_accountid(&charlie)), ZERO);
+        assert_eq!(EncointerBalances::balance(cid, &get_accountid(&eve)), ZERO);
+        assert_eq!(EncointerBalances::balance(cid, &get_accountid(&ferdie)), ZERO);
 
         assert_eq!(
             EncointerCeremonies::participant_reputation((cid, cindex), &get_accountid(&alice)),

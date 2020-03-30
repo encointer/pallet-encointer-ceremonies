@@ -23,6 +23,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(test)]
+#[macro_use]
+extern crate approx;
+
 use support::{
     decl_event, decl_module, decl_storage,
     dispatch::Result,
@@ -41,7 +45,7 @@ use sr_primitives::traits::{IdentifyAccount, Member, Verify, OnFinalize, OnIniti
 use codec::{Decode, Encode};
 
 use encointer_currencies::{CurrencyIdentifier, Location, Degree, LossyInto};
-use encointer_balances::traits::MultiCurrency;
+use encointer_balances::BalanceType;
 use encointer_scheduler::{CeremonyIndexType, CeremonyPhaseType, OnCeremonyPhaseChange};
 
 pub trait Trait: system::Trait 
@@ -129,7 +133,7 @@ decl_storage! {
         AttestationCount get(attestation_count): map CurrencyCeremony => AttestationIndexType;
         // how many peers does each participants observe at their meetup
         MeetupParticipantCountVote get(meetup_participant_count_vote): double_map CurrencyCeremony, blake2_256(T::AccountId) => u32;
-        CeremonyReward get(ceremony_reward) config(): T::Balance;
+        CeremonyReward get(ceremony_reward) config(): BalanceType;
         // [m] distance from assigned meetup location
         LocationTolerance get(location_tolerance) config(): u32; 
         // [ms] time tolerance for meetup moment
@@ -483,7 +487,7 @@ impl<T: Trait> Module<T> {
                     // TODO: check that p also signed others
                     // participant merits reward
                     print_utf8(b"participant merits reward");
-                    match <encointer_balances::Module<T> as MultiCurrency<_>>::deposit(*cid, &p, reward) {
+                    match <encointer_balances::Module<T>>::issue(*cid, &p, reward) {
                         Ok(()) => (),
                         _ => return Err("could not issue reward")
                     };

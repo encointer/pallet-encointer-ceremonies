@@ -85,6 +85,10 @@ git = "https://github.com/paritytech/substrate"
 package = "pallet-timestamp"
 rev = "3bf9540e72df5ecb3955845764dfee7dcdbb26b5"
 
+[dev-dependencies]
+approx = "0.3.0"
+tempdir = "0.3.7"
+
 [dev-dependencies.node-primitives]
 git = "https://github.com/paritytech/substrate"
 package = "node-primitives"
@@ -94,9 +98,6 @@ rev = "3bf9540e72df5ecb3955845764dfee7dcdbb26b5"
 git = "https://github.com/paritytech/substrate"
 package = "substrate-keystore"
 rev = "3bf9540e72df5ecb3955845764dfee7dcdbb26b5"
-
-[dev-dependencies]
-tempdir = "0.3.7"
 
 [dev-dependencies.app-crypto]
 git = "https://github.com/paritytech/substrate"
@@ -126,14 +127,17 @@ std = [
 	"system/std",
 	"encointer-currencies/std",
 	"encointer-scheduler/std",
+	"encointer-balances/std"
 ]
 
 [patch."https://github.com/encointer/pallet-encointer-currencies"]
 pallet-encointer-currencies = { path = "../pallet-encointer-currencies" }
-encointer-currencies-host-calls = { path = "../pallet-encointer-currencies/host-calls" }
 
 [patch."https://github.com/encointer/pallet-encointer-balances"]
 pallet-encointer-balances = { path = "../pallet-encointer-balances" }
 
 [patch."https://github.com/encointer/pallet-encointer-scheduler"]
 pallet-encointer-scheduler = { path = "../pallet-encointer-scheduler" }
+
+[patch."https://github.com/encointer/substrate-fixed"]
+substrate-fixed = { path = "../substrate-fixed" }

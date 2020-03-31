@@ -24,9 +24,9 @@ use externalities::set_and_run_with_externalities;
 use node_primitives::{AccountId, Signature};
 use primitives::crypto::Ss58Codec;
 use primitives::{hashing::blake2_256, sr25519, Blake2Hasher, Pair, Public, H256};
-use sr_primitives::traits::{CheckedAdd, IdentifyAccount, Member, Verify};
-use sr_primitives::weights::Weight;
-use sr_primitives::{
+use sp_runtime::traits::{CheckedAdd, IdentifyAccount, Member, Verify};
+use sp_runtime::weights::Weight;
+use sp_runtime::{
     testing::Header,
     traits::{BlakeTwo256, IdentityLookup},
     MultiSignature, Perbill,

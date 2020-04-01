@@ -163,7 +163,7 @@ decl_module! {
 
             let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
 
-            if <ParticipantIndex<T>>::exists((cid, cindex), &sender) {
+            if <ParticipantIndex<T>>::contains_key((cid, cindex), &sender) {
                 return Err(<Error<T>>::ParticipantAlreadyRegistered.into());
             }
 
@@ -267,7 +267,7 @@ decl_module! {
             let count = <AttestationCount>::get((cid, cindex));
             let mut idx = count+1;
 
-            if <AttestationIndex<T>>::exists((cid, cindex), &sender) {
+            if <AttestationIndex<T>>::contains_key((cid, cindex), &sender) {
                 idx = <AttestationIndex<T>>::get((cid, cindex), &sender);
             } else {
                 let new_count = count.checked_add(1).

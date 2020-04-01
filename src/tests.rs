@@ -21,11 +21,9 @@ use crate::{GenesisConfig, Module, Trait};
 use encointer_currencies::{CurrencyIdentifier, Location, Degree};
 use encointer_scheduler::{CeremonyPhaseType, CeremonyIndexType, OnCeremonyPhaseChange};
 use externalities::set_and_run_with_externalities;
-use node_primitives::{AccountId, Signature};
 use primitives::crypto::Ss58Codec;
 use primitives::{hashing::blake2_256, sr25519, Blake2Hasher, Pair, Public, H256};
 use sp_runtime::traits::{CheckedAdd, IdentifyAccount, Member, Verify};
-use sp_runtime::weights::Weight;
 use sp_runtime::{
     testing::Header,
     traits::{BlakeTwo256, IdentityLookup},
@@ -35,7 +33,7 @@ use inherents::ProvideInherent;
 use std::{cell::RefCell, collections::HashSet, ops::Rem};
 use support::traits::{Currency, FindAuthor, Get, LockIdentifier};
 use support::{assert_ok, impl_outer_event, impl_outer_origin, parameter_types};
-use test_client::AccountKeyring;
+use sp_keyring::AccountKeyring;
 
 const NONE: u64 = 0;
 const GENESIS_TIME: u64 = 1_585_058_843_000;
@@ -48,6 +46,11 @@ const ZERO: BalanceType = BalanceType::from_bits(0x0);
 thread_local! {
     static EXISTENTIAL_DEPOSIT: RefCell<u64> = RefCell::new(0);
 }
+/// The signature type used by accounts/transactions.
+pub type Signature = sr25519::Signature;
+/// An identifier for an account on this system.
+pub type AccountId = <Signature as Verify>::Signer;
+
 pub type BlockNumber = u64;
 pub type Balance = u64;
 
@@ -66,8 +69,8 @@ pub struct TestRuntime;
 
 impl Trait for TestRuntime {
     type Event = ();
-    type Public = <MultiSignature as Verify>::Signer;
-    type Signature = MultiSignature;
+    type Public = AccountId;
+    type Signature = Signature;
 }
 
 pub type EncointerCeremonies = Module<TestRuntime>;
@@ -100,6 +103,10 @@ impl system::Trait for TestRuntime {
     type MaximumBlockLength = MaximumBlockLength;
     type AvailableBlockRatio = AvailableBlockRatio;
     type Version = ();
+	type ModuleToIndex = ();
+	type AccountData = balances::AccountData<u64>;
+	type OnNewAccount = ();
+	type OnKilledAccount = ();          
 }
 
 pub type System = system::Module<TestRuntime>;
@@ -131,7 +138,7 @@ impl timestamp::Trait for TestRuntime {
 }
 pub type Timestamp = timestamp::Module<TestRuntime>;
 
-type AccountPublic = <Signature as Verify>::Signer;
+//type AccountPublic = <Signature as Verify>::Signer;
 
 pub struct ExtBuilder;
 
@@ -325,7 +332,7 @@ fn gets_attested_by(
 
 /// shorthand to convert Pair to AccountId
 fn get_accountid(pair: &sr25519::Pair) -> AccountId {
-    AccountPublic::from(pair.public()).into_account()
+    AccountId::from(pair.public()).into_account()
 }
 
 /// register a simple test currency with 3 meetup locations and well known bootstrappers
@@ -503,7 +510,7 @@ fn fully_attest_meetup(cid: CurrencyIdentifier, keys: Vec<sr25519::Pair>, mindex
             }
             for pair in keys.iter() {
                 println!("checking {}", pair.public().to_ss58check());
-                if AccountId::from(pair.public().0) == *o {
+                if get_accountid(pair) == *o {
                     others.push(pair.clone());
                 }
             }

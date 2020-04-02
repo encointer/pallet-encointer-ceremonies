@@ -31,16 +31,16 @@ use support::{
     decl_event, decl_module, decl_storage, decl_error,
     dispatch::DispatchResult,
     ensure,
-    storage::{StorageDoubleMap, StorageMap, StorageValue},
+    storage::{StorageDoubleMap, StorageMap},
     traits::Get,
 };
 use system::ensure_signed;
 
-use rstd::{cmp::min, convert::{TryFrom, TryInto}};
+use rstd::{cmp::min, convert::TryInto};
 use rstd::prelude::*;
 
 use runtime_io::misc::print_utf8;
-use sp_runtime::traits::{IdentifyAccount, Member, Verify, OnFinalize, OnInitialize, CheckedSub};
+use sp_runtime::traits::{IdentifyAccount, Member, Verify, CheckedSub};
 
 use codec::{Decode, Encode};
 
@@ -115,24 +115,24 @@ decl_storage! {
     trait Store for Module<T: Trait> as EncointerCeremonies {
         // everyone who registered for a ceremony
         // caution: index starts with 1, not 0! (because null and 0 is the same for state storage)
-        ParticipantRegistry get(fn participant_registry): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) ParticipantIndexType => T::AccountId;
-        ParticipantIndex get(fn participant_index): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) T::AccountId => ParticipantIndexType;
-        ParticipantCount get(fn participant_count): map hasher(opaque_blake2_256) CurrencyCeremony => ParticipantIndexType;
-        ParticipantReputation get(fn participant_reputation): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) T::AccountId => Reputation;
+        ParticipantRegistry get(fn participant_registry): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) ParticipantIndexType => T::AccountId;
+        ParticipantIndex get(fn participant_index): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) T::AccountId => ParticipantIndexType;
+        ParticipantCount get(fn participant_count): map hasher(blake2_128_concat) CurrencyCeremony => ParticipantIndexType;
+        ParticipantReputation get(fn participant_reputation): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) T::AccountId => Reputation;
 
         // all meetups for each ceremony mapping to a vec of participants
         // caution: index starts with 1, not 0! (because null and 0 is the same for state storage)
-        MeetupRegistry get(fn meetup_registry): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) MeetupIndexType => Vec<T::AccountId>;
-        MeetupIndex get(fn meetup_index): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) T::AccountId => MeetupIndexType;
-        MeetupCount get(fn meetup_count): map hasher(opaque_blake2_256) CurrencyCeremony => MeetupIndexType;
+        MeetupRegistry get(fn meetup_registry): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) MeetupIndexType => Vec<T::AccountId>;
+        MeetupIndex get(fn meetup_index): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) T::AccountId => MeetupIndexType;
+        MeetupCount get(fn meetup_count): map hasher(blake2_128_concat) CurrencyCeremony => MeetupIndexType;
 
         // collect fellow meetup participants accounts who attestationed key account
         // caution: index starts with 1, not 0! (because null and 0 is the same for state storage)
-        AttestationRegistry get(fn attestation_registry): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) AttestationIndexType => Vec<T::AccountId>;
-        AttestationIndex get(fn attestation_index): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) T::AccountId => AttestationIndexType;
-        AttestationCount get(fn attestation_count): map hasher(opaque_blake2_256) CurrencyCeremony => AttestationIndexType;
+        AttestationRegistry get(fn attestation_registry): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) AttestationIndexType => Vec<T::AccountId>;
+        AttestationIndex get(fn attestation_index): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) T::AccountId => AttestationIndexType;
+        AttestationCount get(fn attestation_count): map hasher(blake2_128_concat) CurrencyCeremony => AttestationIndexType;
         // how many peers does each participants observe at their meetup
-        MeetupParticipantCountVote get(fn meetup_participant_count_vote): double_map hasher(opaque_blake2_256) CurrencyCeremony, hasher(opaque_blake2_256) T::AccountId => u32;
+        MeetupParticipantCountVote get(fn meetup_participant_count_vote): double_map hasher(blake2_128_concat) CurrencyCeremony, hasher(blake2_128_concat) T::AccountId => u32;
         CeremonyReward get(fn ceremony_reward) config(): BalanceType;
         // [m] distance from assigned meetup location
         LocationTolerance get(fn location_tolerance) config(): u32; 
@@ -305,7 +305,7 @@ decl_error! {
 
 impl<T: Trait> Module<T> {
 
-    fn purge_registry(cindex: CeremonyIndexType) -> DispatchResult {
+    fn purge_registry(cindex: CeremonyIndexType) {
         let cids = <encointer_currencies::Module<T>>::currency_identifiers();
         for cid in cids.iter() {
             <ParticipantRegistry<T>>::remove_prefix((cid, cindex));
@@ -319,7 +319,6 @@ impl<T: Trait> Module<T> {
             <AttestationCount>::insert((cid, cindex), 0);
             <MeetupParticipantCountVote<T>>::remove_prefix((cid, cindex));
         }
-        Ok(())
     }
 
     /* this is for a more recent revision of substrate....
@@ -341,7 +340,7 @@ impl<T: Trait> Module<T> {
 
     // this function is expensive, so it should later be processed off-chain within SubstraTEE-worker
     // currently the complexity is O(n) where n is the number of registered participants
-    fn assign_meetups() -> DispatchResult {
+    fn assign_meetups() {
         let cids = <encointer_currencies::Module<T>>::currency_identifiers();
         for cid in cids.iter() {
             let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
@@ -398,21 +397,18 @@ impl<T: Trait> Module<T> {
             }
             // FIXME: with nightly we could do: meetups.drain_filter(|x| x.len() < 3).collect::<Vec<_>>();
 
-            if meetups.is_empty() {
-                return Ok(());
-            };
-
-            // commit result to state
-            <MeetupCount>::insert((cid, cindex), n_meetups as MeetupIndexType);
-            for (i, m) in meetups.iter().enumerate() {
-                let _idx = (i + 1) as MeetupIndexType;
-                for p in meetups[i].iter() {
-                    <MeetupIndex<T>>::insert((cid, cindex), p, &_idx);
+            if !meetups.is_empty() {
+                // commit result to state
+                <MeetupCount>::insert((cid, cindex), n_meetups as MeetupIndexType);
+                for (i, m) in meetups.iter().enumerate() {
+                    let _idx = (i + 1) as MeetupIndexType;
+                    for p in meetups[i].iter() {
+                        <MeetupIndex<T>>::insert((cid, cindex), p, &_idx);
+                    }
+                    <MeetupRegistry<T>>::insert((cid, cindex), &_idx, m.clone());
                 }
-                <MeetupRegistry<T>>::insert((cid, cindex), &_idx, m.clone());
-            }
+            };
         }
-        Ok(())
     }
 
     fn verify_attestation_signature(
@@ -445,13 +441,12 @@ impl<T: Trait> Module<T> {
     // SubstraTEE-worker together with the entire registry
     // as this function can only be called by the ceremony state machine, it could actually work out fine
     // on-chain. It would just delay the next block once per ceremony cycle.
-    fn issue_rewards() -> DispatchResult {
+    fn issue_rewards() {
+        if <encointer_scheduler::Module<T>>::current_phase() != CeremonyPhaseType::REGISTERING {
+            return;
+        }
         let cids = <encointer_currencies::Module<T>>::currency_identifiers();
         for cid in cids.iter() {
-            ensure!(
-                <encointer_scheduler::Module<T>>::current_phase() == CeremonyPhaseType::REGISTERING,
-                "issuance can only be called at the end of ATTESTING phase"
-            );
             let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index() -1;
             let meetup_count = Self::meetup_count((cid, cindex));
             let reward = Self::ceremony_reward();
@@ -499,16 +494,16 @@ impl<T: Trait> Module<T> {
                     // TODO: check that p also signed others
                     // participant merits reward
                     print_utf8(b"participant merits reward");
-                    <encointer_balances::Module<T>>::issue(*cid, &p, reward)?;
-                    <ParticipantReputation<T>>::insert(
-                        (cid, cindex),
-                        &p,
-                        Reputation::VerifiedUnlinked,
-                    );
+                    if let Ok(_) = <encointer_balances::Module<T>>::issue(*cid, &p, reward) {
+                        <ParticipantReputation<T>>::insert(
+                            (cid, cindex),
+                            &p,
+                            Reputation::VerifiedUnlinked,
+                        );
+                    }
                 }
             }
         }
-        Ok(())
     }
 
     fn ballot_meetup_n_votes(

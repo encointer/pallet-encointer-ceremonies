@@ -23,7 +23,7 @@ use encointer_scheduler::{CeremonyPhaseType, CeremonyIndexType, OnCeremonyPhaseC
 use externalities::set_and_run_with_externalities;
 use primitives::crypto::Ss58Codec;
 use primitives::{hashing::blake2_256, sr25519, Blake2Hasher, Pair, Public, H256};
-use sp_runtime::traits::{CheckedAdd, IdentifyAccount, Member, Verify};
+use sp_runtime::traits::{CheckedAdd, IdentifyAccount, Member, Verify, OnFinalize, OnInitialize};
 use sp_runtime::{
     testing::Header,
     traits::{BlakeTwo256, IdentityLookup},
@@ -633,7 +633,7 @@ fn assigning_meetup_works() {
         ));
         assert_eq!(EncointerCeremonies::participant_count((cid, cindex)), 3);
         //omitting phase change here!
-        assert_ok!(EncointerCeremonies::assign_meetups());
+        EncointerCeremonies::assign_meetups();
         assert_eq!(EncointerCeremonies::meetup_count((cid, cindex)), 1);
         let meetup = EncointerCeremonies::meetup_registry((cid, cindex), 1);
         assert_eq!(meetup.len(), 3);

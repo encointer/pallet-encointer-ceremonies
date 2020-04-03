@@ -39,7 +39,7 @@ use system::ensure_signed;
 use rstd::{cmp::min, convert::TryInto};
 use rstd::prelude::*;
 
-use runtime_io::misc::print_utf8;
+use runtime_io::misc::{print_utf8, print_hex };
 use sp_runtime::traits::{IdentifyAccount, Member, Verify, CheckedSub};
 
 use codec::{Decode, Encode};
@@ -150,6 +150,8 @@ decl_module! {
             ensure!(sender == <encointer_scheduler::Module<T>>::ceremony_master(), "only the CeremonyMaster can call this function");
             let cindex = <encointer_scheduler::Module<T>>::current_ceremony_index();
             <ParticipantReputation<T>>::insert(&(cid, cindex-1), reputable, Reputation::VerifiedUnlinked);
+            print_utf8(b"granting reputation to:");
+            print_hex(&sender.encode());
             Ok(())
         }
 
@@ -193,6 +195,8 @@ decl_module! {
             <ParticipantRegistry<T>>::insert((cid, cindex), &new_count, &sender);
             <ParticipantIndex<T>>::insert((cid, cindex), &sender, &new_count);
             <ParticipantCount>::insert((cid, cindex), new_count);
+            print_utf8(b"registered particiant:");
+            print_hex(&sender.encode());
             Ok(())
         }
 
@@ -277,6 +281,8 @@ decl_module! {
             <AttestationRegistry<T>>::insert((cid, cindex), &idx, &verified_attestation_accounts);
             <AttestationIndex<T>>::insert((cid, cindex), &sender, &idx);
             <MeetupParticipantCountVote<T>>::insert((cid, cindex), &sender, &claim_n_participants);
+            print_utf8(b"registered attestations for:");
+            print_hex(&sender.encode());
             Ok(())
         }
     }
@@ -319,6 +325,7 @@ impl<T: Trait> Module<T> {
             <AttestationCount>::insert((cid, cindex), 0);
             <MeetupParticipantCountVote<T>>::remove_prefix((cid, cindex));
         }
+        print_utf8(b"purged registry for last ceremony");
     }
 
     /* this is for a more recent revision of substrate....
@@ -409,6 +416,7 @@ impl<T: Trait> Module<T> {
                 }
             };
         }
+        print_utf8(b"assigned meetups");
     }
 
     fn verify_attestation_signature(
@@ -504,6 +512,7 @@ impl<T: Trait> Module<T> {
                 }
             }
         }
+        print_utf8(b"issued reward");
     }
 
     fn ballot_meetup_n_votes(

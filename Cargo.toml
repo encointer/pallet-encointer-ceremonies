@@ -29,19 +29,19 @@ version = "2.0.0-alpha.5"
 [dependencies.encointer-scheduler]
 default-features = false
 git = "https://github.com/encointer/pallet-encointer-scheduler"
-branch = "v2.0.0-alpha.5"
+tag = "v0.2.0"
 package = "pallet-encointer-scheduler"
 
 [dependencies.encointer-currencies]
 default-features = false
 git = "https://github.com/encointer/pallet-encointer-currencies"
-branch = "v2.0.0-alpha.5"
+tag = "v0.2.0"
 package = "pallet-encointer-currencies"
 
 [dependencies.encointer-balances]
 default-features = false
 git = "https://github.com/encointer/pallet-encointer-balances"
-branch = "v2.0.0-alpha.5"
+tag = "v0.2.0"
 package = "pallet-encointer-balances"
 
 [dependencies.codec]

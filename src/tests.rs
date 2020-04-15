@@ -153,6 +153,7 @@ impl ExtBuilder {
         .assimilate_storage(&mut storage)
         .unwrap();
         encointer_scheduler::GenesisConfig::<TestRuntime> {
+            current_phase: CeremonyPhaseType::REGISTERING,
             current_ceremony_index: 1,
             ceremony_master: AccountId::from(AccountKeyring::Alice),
             phase_durations: vec![
